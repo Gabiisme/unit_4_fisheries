@@ -1,0 +1,108 @@
+---
+title: "ClassNotes03212023"
+output: html_document
+date: "2023-03-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+# Gabi Faton
+# Class Notes 03-2023-21
+
+source("build_collapse_table.R")
+head(fish)
+head(collapse)
+
+# gml
+
+# logistic Regression
+modeldata = collapse %>%
+  group_by(stockid) %>%
+  summarize(evercollapsed = any(current_collapse)) %>%
+  ungroup() %>%
+  left_join(stock) %>%
+  left_join(metadata) %>%
+  mutate(FisheryType = as.factor(FisheryType)) %>%
+  filter(!is.na(FisheryType))
+
+
+head(modeldata)
+
+model_l = glm(evercollapsed ~ FisheryType, data = modeldata, family = "binomial")
+summary(model_l)
+
+modeldata %>% distinct(FisheryType) %>% arrange(FisheryType)
+
+FisheryType = modeldata %>%
+  distinct(FisheryType)
+
+model_l_predict = predict(model_l, newdata=FisheryType, type="response", se.fit=TRUE)
+
+head(model_l_predict)
+
+collapse_fishery_type_predictions = cbind(FisheryType, model_l_predict)
+
+ggplot(aes(x=FisheryType, y=fit, fill=FisheryType), data=collapse_fishery_type_predictions) +
+  geom_bar(stat="identity", show.legend = FALSE) + # stat="count" is default (like histogram)
+  geom_errorbar(aes(ymin=fit-se.fit, ymax=fit+se.fit), width=0.2) +
+  coord_flip() +
+  ylab("Probability of stock collapse")
+
+
+u_summary = timeseries_values_views %>%
+  filter(!is.na(UdivUmsypref),
+         !is.na(BdivBmsypref)) %>%
+  group_by(stockid) %>%
+  summarize(yrs_data = n(),
+            ratio_yrs_overfished = sum(UdivUmsypref > 1)/yrs_data,
+            ratio_yrs_low_stock = sum(UdivUmsypref < 1)/yrs_data) %>%
+  select(-yrs_data)
+
+
+collapse_summary = collapse %>%
+  group_by(stockid) %>%
+  summarize(yrs_data = n(),
+            yrs_collapsed = sum(current_collapse)) %>%
+  inner_join(u_summary, by="stockid") # only keep stocks that have collapse data AND u_summary data
+ 
+head(collapse_summary)
+
+table(collapse_summary$yrs_collapsed)
+
+collapse_summary_zero_trunc = collapse_summary %>% filter(yrs_collapsed>0)
+
+model_p = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock, 
+              offset(log(yrs_data)), 
+              data=collapse_summary_zero_trunc, 
+              family="poisson") 
+
+summary(model_p)
+
+library(AER)
+AER::dispersiontest(model_p)
+
+
+model_qp = glm(yrs_collapsed ~ ratio_yrs_overfished + ratio_yrs_low_stock , offset(log(yrs_data)), data=collapse_summary_zero_trunc, family="quasipoisson") 
+
+summary(model_qp)
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
